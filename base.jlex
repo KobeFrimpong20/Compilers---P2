@@ -61,7 +61,10 @@ class CharNum {
 %%
 
 DIGIT=        [0-9]
+LETTER=       [a-zA-z]
 WHITESPACE=   [\040\t]
+GOODESCAPES=  [nst'"\\]
+BADESCAPES=   [^nst'"\\]
 
 %implements java_cup.runtime.Scanner
 %function next_token
@@ -78,11 +81,41 @@ return new Symbol(sym.EOF);
 {DIGIT}+  { // NOTE: the following computation of the integer value does
             //       NOT check for overflow. This must be changed.
             int val = Integer.parseInt(yytext());
+            if (val > Integer.MAX_VALUE) {
+                ErrMsg.warn(yyline+1, CharNum.num, 
+                            "integer literal too large - using max value");
+                val = Integer.MAX_VALUE;
+            }
             Symbol S = new Symbol(sym.INTLITERAL,
                              new IntLitTokenVal(yyline+1, CharNum.num, val));
             CharNum.num += yytext().length();
             return S;
           }
+
+\"(\\{GOODESCAPES}|[^"\\\n])*\"  { // The following is for VALID String Literals
+                                 Symbol S = new Symbol(sym.STRLITERAL,
+                                                  new StrLitTokenVal(yyline+1, CharNum.num, yytext()));
+                                 CharNum.num += yytext().length();
+                                 return S;
+                                 }
+
+\"(\\{GOODESCAPES}|[^"\n\\]|\\{BADESCAPES})*\"  { // string literal with bad escape char
+                                                  ErrMsg.fatal(yyline+1, CharNum.num,
+                                                               "string literal with bad escaped character ignored");
+                                                  CharNum.num += yytext();
+                                                }
+
+\"(\\{GOODESCAPES}|[^"\n\\])*\n  { // unterminated string literal
+                                     ErrMsg.fatal(yyline+1, CharNum.num,
+                                                  "unterminated string literal ignored");
+                                     CharNum.num = 1;
+                                   }
+
+\"(\\{GOODESCAPES}|[^"\n\\]|\\({BADESCAPES}|))*\n  { // string literal with bad escape char AND unterminated
+                                                     ErrMsg.fatal(yyline+1, CharNum.num,
+                                                                  "unterminated string literal with bad escaped character ignored");
+                                                     CharNum.num = 1;
+                                                   }
 
 \n        { CharNum.num = 1; }
 
@@ -147,6 +180,12 @@ return new Symbol(sym.EOF);
               CharNum.num += yytext().length();
               return S;
 }
+
+({LETTER}|"_")({DIGIT}|{LETTER}|"_")*  { Symbol S = new Symbol(sym.ID,
+                                                          new IdTokenVal(yyline+1, CharNum.num, yytext()));
+                                         CharNum.num += yytext().length();
+                                         return S;
+                                       }
 
 "="       { Symbol S = new Symbol(sym.ASSIGN, new TokenVal(yyline+1, CharNum.num));
             CharNum.num++;
